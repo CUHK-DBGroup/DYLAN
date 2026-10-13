@@ -1,0 +1,46 @@
+cmake_minimum_required(VERSION 3.22)
+project(DYLAN VERSION 1.0.0 LANGUAGES CXX)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+option(DYLAN_ORIGINAL_SIMD "Use original AVX/AVX2/AVX512F/FMA compiler options" ON)
+option(DYLAN_SANITIZE "Enable address and undefined-behavior sanitizers" OFF)
+option(DYLAN_BUILD_CLI "Build the dylan command-line tool" ON)
+option(DYLAN_BUILD_EXAMPLES "Build the C++ example" ON)
+
+find_package(OpenMP REQUIRED COMPONENTS CXX)
+add_library(dylan_build_options INTERFACE)
+target_compile_features(dylan_build_options INTERFACE cxx_std_17)
+target_link_libraries(dylan_build_options INTERFACE OpenMP::OpenMP_CXX)
+target_compile_definitions(dylan_build_options INTERFACE HAVE_CXX0X)
+target_compile_options(dylan_build_options INTERFACE -fpic
+    $<$<CONFIG:Release>:-O3;-ftree-vectorize;-funroll-loops;-fopenmp-simd>)
+if(DYLAN_ORIGINAL_SIMD)
+    target_compile_options(dylan_build_options INTERFACE -mfma -mavx -mavx512f -mavx2)
+else()
+    target_compile_definitions(dylan_build_options INTERFACE NO_MANUAL_VECTORIZATION)
+endif()
+if(DYLAN_SANITIZE)
+    target_compile_options(dylan_build_options INTERFACE
+        -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(dylan_build_options INTERFACE -fsanitize=address,undefined)
+endif()
+
+add_library(dylan STATIC src/index.cpp)
+add_library(dylan::dylan ALIAS dylan)
+target_compile_features(dylan PUBLIC cxx_std_17)
+target_include_directories(dylan PUBLIC include PRIVATE src third_party)
+target_link_libraries(dylan PRIVATE dylan_build_options)
+
+if(DYLAN_BUILD_CLI)
+    add_executable(dylan_cli apps/dylan.cpp)
+    set_target_properties(dylan_cli PROPERTIES OUTPUT_NAME dylan)
+    target_link_libraries(dylan_cli PRIVATE dylan dylan_build_options)
+endif()
+if(DYLAN_BUILD_EXAMPLES)
+    add_executable(dylan_example examples/basic.cpp)
+    target_link_libraries(dylan_example PRIVATE dylan dylan_build_options)
+endif()
+
